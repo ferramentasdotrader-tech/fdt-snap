@@ -1,5 +1,6 @@
 import express from "express";
-import puppeteer from "puppeteer";
+import chromium from "chromium";
+import puppeteer from "puppeteer-core";
 import { Telegraf } from "telegraf";
 
 // --------- CONFIG ---------
@@ -9,15 +10,21 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 // VARIÁVEIS (Render -> Environment)
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN; // compat
+const TELEGRAM_BOT_TOKEN =
+  process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN; // compat
 const CHAT_ID = process.env.CHAT_ID;
-const CHART_URL = process.env.SNAP_URL || process.env.CHART_URL || "https://br.tradingview.com/chart/veTrTJ7Q/";
+const CHART_URL =
+  process.env.SNAP_URL ||
+  process.env.CHART_URL ||
+  "https://br.tradingview.com/chart/veTrTJ7Q/";
 
 // Opcional: defina TZ=America/Sao_Paulo no Render p/ horário BRT automático
 const TZ = process.env.TZ || "America/Sao_Paulo";
 
 if (!TELEGRAM_BOT_TOKEN || !CHAT_ID) {
-  console.error("Faltando TELEGRAM_BOT_TOKEN ou CHAT_ID nas variáveis de ambiente.");
+  console.error(
+    "Faltando TELEGRAM_BOT_TOKEN ou CHAT_ID nas variáveis de ambiente."
+  );
 }
 
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
@@ -25,7 +32,6 @@ const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 // --------- HELPERS ---------
 function toBrtISOString(ts) {
   const d = ts ? new Date(ts) : new Date();
-  // formata data/hora em pt-BR (BRT)
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "medium",
@@ -69,12 +75,23 @@ function fmtShort(payload) {
     reason = "",
   } = payload || {};
 
-  // formato curto no topo (como você pediu)
   // EX: ETHUSDC.P | LONG | 4295.04 | 1 | setup-teste
   const header = `${symbol} | ${dir} | ${price} | ${tf} | ${reason}`;
   const title = "📊 *Alerta TradingView – DZAT* 📊";
 
-  return [header, "", title, "", `📦 *Produto:* ${product}`, `📈 *Ativo:* ${symbol}`, `⏱️ *Tempo Gráfico:* ${tf}`, `💰 *Preço:* ${price}`, `🎯 *Direção:* ${dir}`, `🧠 *Motivo:* ${reason}`, `⏰ *Horário (BRT):* ${toBrtISOString()}`].join("\n");
+  return [
+    header,
+    "",
+    title,
+    "",
+    `📦 *Produto:* ${product}`,
+    `📈 *Ativo:* ${symbol}`,
+    `⏱️ *Tempo Gráfico:* ${tf}`,
+    `💰 *Preço:* ${price}`,
+    `🎯 *Direção:* ${dir}`,
+    `🧠 *Motivo:* ${reason}`,
+    `⏰ *Horário (BRT):* ${toBrtISOString()}`,
+  ].join("\n");
 }
 
 async function sendText(payload) {
@@ -86,8 +103,17 @@ async function sendText(payload) {
 async function takeSnapAndSend(urlOverride) {
   const url = urlOverride || CHART_URL;
 
+  // IMPORTANTÍSSIMO: usar o binário leve do Render
   const browser = await puppeteer.launch({
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    executablePath: chromium.path,
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--single-process",
+      "--disable-gpu",
+    ],
   });
 
   try {
@@ -99,11 +125,9 @@ async function takeSnapAndSend(urlOverride) {
     // carregar TradingView
     await page.goto(url, { waitUntil: "networkidle2", timeout: 120000 });
 
-    // (Opcional) Aguarda algum seletor estável antes de fotografar.
-    // Exemplo: canvas principal do gráfico:
+    // (Opcional) aguardar seletor estável
     // await page.waitForSelector('canvas', { timeout: 20000 }).catch(()=>{});
 
-    // tira screenshot em buffer
     const buffer = await page.screenshot({ type: "png" });
 
     await bot.telegram.sendPhoto(CHAT_ID, { source: buffer });
